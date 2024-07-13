@@ -1,7 +1,8 @@
-﻿using GameOfLife.Domain.Interfaces;
+﻿using GameOfLife.Domain.Dtos;
+using GameOfLife.Domain.Interfaces;
 using GameOfLife.Domain.Models;
-using GameOfLife.Domain.Services;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
 
 namespace GameOfLife.Api.Controllers
 {
@@ -13,11 +14,13 @@ namespace GameOfLife.Api.Controllers
 
         private readonly ILogger<BoardController> _logger;
         private readonly IBoardService _boardService;
+        private readonly IRedisService _redisService;
 
-        public BoardController(ILogger<BoardController> logger, IBoardService boardService)
+        public BoardController(ILogger<BoardController> logger, IBoardService boardService, IRedisService redisService)
         {
             _logger = logger;
             _boardService = boardService;
+            _redisService = redisService;
         }
 
         [HttpGet]
@@ -27,37 +30,37 @@ namespace GameOfLife.Api.Controllers
         }
 
         [HttpPost]
-        public Guid CreateBoard([FromBody] Board board)
+        public Guid CreateBoard([FromBody] BoardDto board)
         {
-            // Initializing the grid.
-            int[,] grid = {
-                { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
-                { 0, 0, 0, 1, 1, 0, 0, 0, 0, 0 },
-                { 0, 0, 0, 0, 1, 0, 0, 0, 0, 0 },
-                { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
-                { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
-                { 0, 0, 0, 1, 1, 0, 0, 0, 0, 0 },
-                { 0, 0, 1, 1, 0, 0, 0, 0, 0, 0 },
-                { 0, 0, 0, 0, 0, 1, 0, 0, 0, 0 },
-                { 0, 0, 0, 0, 1, 0, 0, 0, 0, 0 },
-                { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }
-            };
+            _logger.LogTrace("Instantiating new Board");
 
-            board = new Board(Guid.NewGuid(), grid);
+            var id = Guid.NewGuid();
 
+            _redisService.SetKeyValue(id, new Board(id, board.Cells) { });
 
-
-            return board.Id;
+            return id;
         }
 
         [HttpGet("GetNextState")]
         public Board GetNextState([FromQuery] Guid Id)
         {
-            //get board by id
-            //do it here
-            var board = Board;
+            var board = _redisService.GetKeyValue(Id);
 
-            var newCells = _boardService.NextGeneration(board.Cells);
+            var newCells = _boardService.NextGeneration(board);
+
+            return new Board(Board.Id, null);
+        }
+
+        [HttpGet("GetFinalState")]
+        public Board GetFinalState([FromQuery] Guid Id)
+        {
+            var board = Board;
+            var newCells = _redisService.GetKeyValue(Id);
+
+            for (int i = 0; i < 10; i++)
+            {
+                newCells = _boardService.NextGeneration(board.Cells);
+            }
 
             return new Board(Board.Id, newCells);
         }
